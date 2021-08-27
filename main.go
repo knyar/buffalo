@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/dghubble/go-twitter/twitter"
 	"github.com/dghubble/oauth1"
@@ -42,7 +43,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	food := r.FormValue("food")
+	food := strings.ToLower(r.FormValue("food"))
 	log.Printf("Food: %s", food)
 
 	if len(food) > 35 {
