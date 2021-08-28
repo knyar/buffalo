@@ -44,6 +44,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 	}
 
 	food := strings.ToLower(r.FormValue("food"))
+	food = strings.TrimSpace(food)
 	log.Printf("Food: %s", food)
 
 	if len(food) > 35 {
