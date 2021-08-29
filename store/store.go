@@ -11,7 +11,7 @@ import (
 )
 
 type Store struct {
-	store gokv.Store
+	inMemoryStore gokv.Store
 }
 
 type Item struct {
@@ -20,22 +20,34 @@ type Item struct {
 }
 
 func New() (*Store, error) {
-	if m := os.Getenv("MYSQL_DB"); m != "" {
-		opts := mysql.Options{DataSourceName: m}
-		client, err := mysql.NewClient(opts)
-		if err != nil {
-			return nil, errors.Wrap(err, "could not connect to mysql server")
-		}
-		return &Store{client}, nil
+	// An in-memory store that is used if no MYSQL_DB is provided.
+	// This should only be used in development mode.
+	s := &Store{syncmap.NewStore(syncmap.DefaultOptions)}
+
+	client, err := s.connect()
+	defer client.Close()
+	if err != nil {
+		return nil, errors.Wrap(err, "could not connect to mysql server")
 	}
-	// If no MYSQL_DB is provided, use an in-memory store. This should only
-	// be used in development mode.
-	return &Store{syncmap.NewStore(syncmap.DefaultOptions)}, nil
+	return s, nil
+}
+
+func (s *Store) connect() (gokv.Store, error) {
+	if m := os.Getenv("MYSQL_DB"); m != "" {
+		return mysql.NewClient(mysql.Options{DataSourceName: m})
+	}
+	return s.inMemoryStore, nil
 }
 
 func (s *Store) Get(key string) (*Item, error) {
+	client, err := s.connect()
+	if err != nil {
+		return nil, errors.Wrap(err, "could not connect to database")
+	}
+	defer client.Close()
+
 	i := new(Item)
-	found, err := s.store.Get(key, i)
+	found, err := client.Get(key, i)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get item")
 	}
@@ -46,9 +58,15 @@ func (s *Store) Get(key string) (*Item, error) {
 }
 
 func (s *Store) Put(key string, id int64) (*Item, error) {
+	client, err := s.connect()
+	if err != nil {
+		return nil, errors.Wrap(err, "could not connect to database")
+	}
+	defer client.Close()
+
 	i := Item{
 		ID:        id,
 		WriteTime: time.Now(),
 	}
-	return &i, s.store.Set(key, i)
+	return &i, client.Set(key, i)
 }
