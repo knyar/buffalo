@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/knyar/buffalo/store"
+
 	"github.com/dghubble/go-twitter/twitter"
 	"github.com/dghubble/oauth1"
 )
@@ -20,7 +22,7 @@ const tplURL = "https://twitter.com/GoodWithBuffalo/status/%d"
 func tweet(text string) (int64, error) {
 	if dryRun {
 		id := rand.Int63()
-		log.Printf("Dry-run: returning fake tweet id %d", id)
+		log.Printf("Dry-run: returning fake tweet id %d for %s", id, text)
 		return id, nil
 	}
 	apiKey := os.Getenv("API_KEY")
@@ -35,10 +37,15 @@ func tweet(text string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	log.Printf("Posted tweet id %d for %s", tweet.ID, text)
 	return tweet.ID, nil
 }
 
-func post(w http.ResponseWriter, r *http.Request) {
+type server struct {
+	store *store.Store
+}
+
+func (s *server) post(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		w.Write([]byte("expected POST"))
@@ -54,7 +61,6 @@ func post(w http.ResponseWriter, r *http.Request) {
 
 	food := strings.ToLower(r.FormValue("food"))
 	food = strings.TrimSpace(food)
-	log.Printf("Food: %s", food)
 
 	if len(food) > 35 {
 		w.WriteHeader(http.StatusBadRequest)
@@ -66,7 +72,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
 
-	id, err := tweet(fmt.Sprintf(tplMessage, food))
+	item, err := s.store.Get(food)
 	if err != nil {
 		log.Printf("error happened: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -74,8 +80,26 @@ func post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf(tplURL, id)
+	if item == nil {
+		id, err := tweet(fmt.Sprintf(tplMessage, food))
+		if err != nil {
+			log.Printf("error happened: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(fmt.Sprintf("error happened: %v", err)))
+			return
+		}
 
+		item, err = s.store.Put(food, id)
+		if err != nil {
+			log.Printf("error happened: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(fmt.Sprintf("error happened: %v", err)))
+			return
+		}
+	}
+
+	url := fmt.Sprintf(tplURL, item.ID)
+	log.Printf("Tweet for '%s' is %s", food, url)
 	http.Redirect(w, r, url, http.StatusSeeOther)
 }
 
@@ -84,13 +108,17 @@ func main() {
 		dryRun = true
 	}
 
-	fs := http.FileServer(http.Dir("./static"))
-	http.Handle("/", fs)
-	http.HandleFunc("/post", post)
-
-	log.Println("Listening on :8000")
-	err := http.ListenAndServe(":8000", nil)
+	store, err := store.New()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	s := &server{store: store}
+
+	fs := http.FileServer(http.Dir("./static"))
+	http.Handle("/", fs)
+	http.HandleFunc("/post", s.post)
+
+	log.Println("Listening on :8000")
+	log.Fatal(http.ListenAndServe(":8000", nil))
 }

@@ -12,6 +12,7 @@ This is the source code for [withbuffalo.com](https://withbuffalo.com/)
 docker build -t buffalo .
 docker run -d --restart always --name buffalo \
         -p 8000:8000 \
+        -e MYSQL_DB=username:password@protocol(address)/dbname \
         -e API_KEY=XXXXXXX \
         -e API_SECRET=YYYYYYYY \
         -e ACCESS_TOKEN=XYXYXYXYX \
