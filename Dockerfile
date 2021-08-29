@@ -8,4 +8,4 @@ RUN go build
 EXPOSE 8000
 USER nobody:nobody
 
-ENTRYPOINT ["/app/buffalostyle"]
+ENTRYPOINT ["/app/buffalo"]
