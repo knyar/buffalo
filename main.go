@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -11,9 +12,17 @@ import (
 	"github.com/dghubble/oauth1"
 )
 
-const tpl = "We tried %s with buffalo sauce. Rating: 10/10"
+var dryRun = false
 
-func tweet(text string) (string, error) {
+const tplMessage = "We tried %s with buffalo sauce. Rating: 10/10"
+const tplURL = "https://twitter.com/GoodWithBuffalo/status/%d"
+
+func tweet(text string) (int64, error) {
+	if dryRun {
+		id := rand.Int63()
+		log.Printf("Dry-run: returning fake tweet id %d", id)
+		return id, nil
+	}
 	apiKey := os.Getenv("API_KEY")
 	apiSecret := os.Getenv("API_SECRET")
 	accessToken := os.Getenv("ACCESS_TOKEN")
@@ -24,9 +33,9 @@ func tweet(text string) (string, error) {
 	client := twitter.NewClient(httpClient)
 	tweet, _, err := client.Statuses.Update(text, nil)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
-	return fmt.Sprintf("https://twitter.com/%s/status/%d", tweet.User.ScreenName, tweet.ID), nil
+	return tweet.ID, nil
 }
 
 func post(w http.ResponseWriter, r *http.Request) {
@@ -57,7 +66,7 @@ func post(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
 
-	url, err := tweet(fmt.Sprintf(tpl, food))
+	id, err := tweet(fmt.Sprintf(tplMessage, food))
 	if err != nil {
 		log.Printf("error happened: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -65,10 +74,16 @@ func post(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	url := fmt.Sprintf(tplURL, id)
+
 	http.Redirect(w, r, url, http.StatusSeeOther)
 }
 
 func main() {
+	if dry := os.Getenv("DRY_RUN"); dry != "" {
+		dryRun = true
+	}
+
 	fs := http.FileServer(http.Dir("./static"))
 	http.Handle("/", fs)
 	http.HandleFunc("/post", post)
