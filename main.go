@@ -19,6 +19,7 @@ var dryRun = false
 const tplMessage = "We tried %s with buffalo sauce. Rating: 10/10"
 const tplURL = "https://twitter.com/GoodWithBuffalo/status/%d"
 
+// tweet posts a message to twitter and returns tweet id.
 func tweet(text string) (int64, error) {
 	if dryRun {
 		id := rand.Int63()
@@ -39,6 +40,14 @@ func tweet(text string) (int64, error) {
 	}
 	log.Printf("Posted tweet id %d for %s", tweet.ID, text)
 	return tweet.ID, nil
+}
+
+// Trim common prefixes while storing food names in the database.
+// This will make sure that 'a cheeseburger' points to the same tweet as 'cheeseburger'.
+func trimPrefix(s string) string {
+	s = strings.TrimPrefix(s, "a ")
+	s = strings.TrimPrefix(s, "the ")
+	return s
 }
 
 type server struct {
@@ -72,7 +81,7 @@ func (s *server) post(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
 
-	item, err := s.store.Get(food)
+	item, err := s.store.Get(trimPrefix(food))
 	if err != nil {
 		log.Printf("error happened: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -89,7 +98,7 @@ func (s *server) post(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		item, err = s.store.Put(food, id)
+		item, err = s.store.Put(trimPrefix(food), id)
 		if err != nil {
 			log.Printf("error happened: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
