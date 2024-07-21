@@ -1,45 +1,59 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/knyar/buffalo/store"
 
-	"github.com/dghubble/go-twitter/twitter"
-	"github.com/dghubble/oauth1"
+	"github.com/michimani/gotwi"
+	"github.com/michimani/gotwi/tweet/managetweet"
+	"github.com/michimani/gotwi/tweet/managetweet/types"
 )
 
 var dryRun = false
 
 const tplMessage = "We tried %s with buffalo sauce. Rating: 10/10"
-const tplURL = "https://twitter.com/GoodWithBuffalo/status/%d"
+const tplURL = "https://x.com/GoodWithBuffalo/status/%d"
 
 // tweet posts a message to twitter and returns tweet id.
 func tweet(text string) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	if dryRun {
 		id := rand.Int63()
 		log.Printf("Dry-run: returning fake tweet id %d for %s", id, text)
 		return id, nil
 	}
-	apiKey := os.Getenv("API_KEY")
-	apiSecret := os.Getenv("API_SECRET")
-	accessToken := os.Getenv("ACCESS_TOKEN")
-	accessTokenSecret := os.Getenv("ACCESS_TOKEN_SECRET")
-	config := oauth1.NewConfig(apiKey, apiSecret)
-	token := oauth1.NewToken(accessToken, accessTokenSecret)
-	httpClient := config.Client(oauth1.NoContext, token)
-	client := twitter.NewClient(httpClient)
-	tweet, _, err := client.Statuses.Update(text, nil)
+	client, err := gotwi.NewClient(&gotwi.NewClientInput{
+		AuthenticationMethod: gotwi.AuthenMethodOAuth1UserContext,
+		OAuthToken:           os.Getenv("GOTWI_ACCESS_TOKEN"),
+		OAuthTokenSecret:     os.Getenv("GOTWI_ACCESS_TOKEN_SECRET"),
+	})
 	if err != nil {
 		return 0, err
 	}
-	log.Printf("Posted tweet id %d for %s", tweet.ID, text)
-	return tweet.ID, nil
+	req := &types.CreateInput{Text: gotwi.String(text)}
+	resp, err := managetweet.Create(ctx, client, req)
+	if err != nil {
+		return 0, err
+	}
+
+	id, err := strconv.ParseInt(gotwi.StringValue(resp.Data.ID), 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("could not convert tweet id %q to integer: %w", gotwi.StringValue(resp.Data.ID), err)
+	}
+
+	log.Printf("Posted tweet id %d for %s", id, text)
+	return id, nil
 }
 
 // Trim common prefixes while storing food names in the database.
